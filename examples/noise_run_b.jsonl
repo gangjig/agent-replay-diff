@@ -1,0 +1,4 @@
+{"step": 0, "type": "message", "role": "user", "content": "Summarize today's weather in Arlington, VA.", "ts": 1792234861}
+{"step": 1, "type": "tool_call", "tool": "get_weather", "call_id": "9a1c4e77-83bd-4f02-a6d1-5e8b3c2f9046", "input": {"city": "Arlington, VA", "units": "fahrenheit"}, "timestamp": "2026-10-17T09:01:44Z", "duration_ms": 31}
+{"step": 2, "type": "tool_result", "tool": "get_weather", "call_id": "9a1c4e77-83bd-4f02-a6d1-5e8b3c2f9046", "output": {"temp_f": 54, "conditions": ["clearing", "cold", "windy"], "summary": "Sunny and windy"}, "timestamp": "2026-10-17T09:01:45Z", "latency_ms": 487, "request_id": "04d8f2a6-7c19-4b5a-9e03-61f7a8d2c3b5"}
+{"step": 3, "type": "message", "role": "assistant", "content": "It is 54F, sunny and windy in Arlington today.", "timestamp": "2026-10-17T09:01:46.987Z"}

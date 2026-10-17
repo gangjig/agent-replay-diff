@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-replay-diff"
+version = "0.1.0"
+description = "Compare repeated runs of the same agent task: normalize volatile noise (timestamps, IDs, latencies) in recorded traces and pinpoint the first real divergence"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Gang Ji" }]
+keywords = ["agents", "llm", "evaluation", "nondeterminism", "diff", "testing", "traces"]
+
+[project.scripts]
+agent-replay-diff = "agent_replay_diff.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
