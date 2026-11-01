@@ -8,6 +8,7 @@ import sys
 from collections.abc import Sequence
 
 from . import __version__
+from .compaction import compare_traces_compaction_aware
 from .differ import compare_traces
 from .loader import TraceError, load_trace
 from .normalize import Normalizer
@@ -59,6 +60,22 @@ def build_parser() -> argparse.ArgumentParser:
         "(treat list order as meaningful)",
     )
     parser.add_argument(
+        "--compaction-aware",
+        action="store_true",
+        help="treat each run's first compaction step (type \"compaction\" "
+        "or \"context_compaction\") as an expected divergence boundary: "
+        "strict comparison before it, summary spot-check at it, and "
+        "tool-call-sequence + final-step comparison after it",
+    )
+    parser.add_argument(
+        "--compaction-type",
+        action="append",
+        default=[],
+        metavar="TYPE",
+        help="additional step type that marks a compaction step "
+        "(repeatable, case-insensitive)",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="print the report as machine-readable JSON",
@@ -101,11 +118,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         patterns=patterns,
         sort_lists=not args.no_sort_lists,
     )
-    report = compare_traces(
-        traces,
-        labels=[str(path) for path in args.traces],
-        normalizer=normalizer,
-        max_diff_lines=args.max_diff_lines,
-    )
+    if args.compaction_aware:
+        report = compare_traces_compaction_aware(
+            traces,
+            labels=[str(path) for path in args.traces],
+            normalizer=normalizer,
+            max_diff_lines=args.max_diff_lines,
+            extra_types=tuple(args.compaction_type),
+        )
+    else:
+        report = compare_traces(
+            traces,
+            labels=[str(path) for path in args.traces],
+            normalizer=normalizer,
+            max_diff_lines=args.max_diff_lines,
+        )
     print(render_json(report) if args.json else render_text(report))
     return report.exit_code

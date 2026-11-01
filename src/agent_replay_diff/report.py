@@ -35,6 +35,43 @@ def render_text(report: DiffReport) -> str:
     lines.append(f"divergent:   {counts[DIVERGENT]}")
     lines.append("")
 
+    if report.compaction_note:
+        lines.append(f"note: {report.compaction_note}")
+        lines.append("")
+
+    if report.compaction is not None:
+        c = report.compaction
+        boundaries = ", ".join(
+            f"{label} step {index}"
+            for label, index in zip(report.labels, c.boundary_indices)
+        )
+        ratio = (
+            "inf"
+            if c.summary_length_ratio == float("inf")
+            else f"{c.summary_length_ratio:.2f}"
+        )
+        lines.append("compaction-aware comparison:")
+        lines.append(f"  boundary (first compaction): {boundaries}")
+        lines.append(
+            "  summaries: lengths "
+            + "/".join(str(n) for n in c.summary_lengths)
+            + f" chars (ratio {ratio}), entity overlap "
+            f"{c.summary_entity_overlap:.2f} — "
+            + ("OK" if c.summary_ok else "MISMATCH")
+        )
+        if c.final_compared:
+            final_text = "equal" if c.final_equal else "DIFFERS"
+        else:
+            final_text = "not compared (a run ends at its boundary)"
+        lines.append(
+            f"  tail: tool calls per run {c.tail_tool_calls}, "
+            f"final step {final_text}, "
+            f"{c.ignored_steps} post-compaction step(s) ignored"
+        )
+        if c.tail_tool_mismatch:
+            lines.append(f"  tail mismatch: {c.tail_tool_mismatch}")
+        lines.append("")
+
     if report.verdict == VERDICT_DIVERGENT:
         lines.append(f"verdict: {_VERDICT_LINES[VERDICT_DIVERGENT]}")
         lines.append(f"first divergence: step {report.first_divergence}")

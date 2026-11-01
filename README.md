@@ -64,6 +64,10 @@ agent-replay-diff run_a.jsonl run_b.jsonl --pattern 'job-[0-9]+'
 # Treat scalar-list order as meaningful
 agent-replay-diff run_a.jsonl run_b.jsonl --no-sort-lists
 
+# Runs whose harness compacts context mid-run: don't let the
+# summarizer's wording pose as a divergence
+agent-replay-diff run_a.jsonl run_b.jsonl --compaction-aware
+
 # Longer first-divergence diffs
 agent-replay-diff run_a.jsonl run_b.jsonl --max-diff-lines 200
 ```
@@ -113,6 +117,27 @@ Runs are aligned by step index. A step is **identical** if the raw steps are equ
 
 Verdicts: `stable` (every step identical), `stable_after_normalization` (no real divergence), `divergent`.
 
+### Compaction-aware mode
+
+Modern harnesses compact their context mid-run: the earlier steps are replaced by a generated summary and the agent continues from it (OpenAI's Agents SDK does this in the background, on by default). Two runs of the same task then produce *different summaries* — and different wording in every message that quotes the summary afterwards — even when the agent behaved identically. Strict mode reports that as a divergence at the compaction step: the most common fork becomes a fake one.
+
+`--compaction-aware` treats each run's first compaction step (type `compaction` or `context_compaction`; add your harness's name with `--compaction-type`) as an expected divergence boundary and compares in three phases:
+
+1. **Before the boundary: strict.** Steps before the earliest compaction are compared exactly as above — the summary doesn't exist yet, so there is no excuse for drift.
+2. **At the boundary: spot-check, not diff.** The summaries are never worded alike, so they are checked instead: lengths within 2× of each other, and the key entities they mention (dotted identifiers like `auth.py`, `snake_case` names, numbers, quoted spans) overlapping with Jaccard similarity ≥ 0.5. A summary that dropped the file under repair, or ballooned to ten times the length, is a real divergence, reported at the boundary step with the summaries diffed.
+3. **After the boundary: behavior only.** Message wording may drift (it quotes a differently-worded summary), so the tail is compared on what the agent *did*: the tool-call sequence (tool names with normalized inputs, in order) and the final step. Everything else in the tail is counted as ignored, and the count is in the report.
+
+```
+compaction-aware comparison:
+  boundary (first compaction): run_a.jsonl step 3, run_b.jsonl step 3
+  summaries: lengths 173/160 chars (ratio 1.08), entity overlap 1.00 — OK
+  tail: tool calls per run [2, 2], final step equal, 2 post-compaction step(s) ignored
+
+verdict: STABLE AFTER NORMALIZATION (differences were volatile noise only)
+```
+
+The same pair in strict mode reports `DIVERGENT, first divergence: step 3` — the compaction step itself (see `examples/compact_run_*.jsonl`, Demo 3 in `examples/README.md`). The mode applies only when **every** run contains a compaction step: if one run never compacted, the runs genuinely took different paths, and the comparison falls back to strict mode with a note in the report. Runs may compact at different steps; a run's steps between the earliest boundary and its own boundary are covered only by its summary spot-check. Only the first compaction per run is a boundary — later re-compactions sit in the tail and are ignored like other non-tool steps.
+
 ## Exit codes
 
 | Code | Meaning |
@@ -131,6 +156,7 @@ agent-replay-diff is honest about what it cannot do:
 - **Normalization can mask real differences.** If a genuinely meaningful value happens to look volatile (a real ID that is UUID-shaped, a meaningful timestamp, a number in epoch range), or your `--pattern` / `--ignore-key` choices are too aggressive, real differences will be classified as noise. Start from the defaults and widen them only with evidence.
 - **JSON traces only.** Traces must be JSONL or a JSON array of step objects. Other recording formats (message lists in code, vendor-specific event streams) need converting first.
 - **Equality is structural, not semantic.** Two steps that say the same thing in different words are divergent; two steps with the same words in a different (object) list order are divergent. The tool finds where runs parted, not whether the parting mattered.
+- **Compaction-aware mode checks summaries by proxy.** Length ratio and entity overlap catch summaries that dropped the topic or ballooned, but a summary can pass both checks and still misstate a fact the entities don't capture. The spot-check removes the *fake* forks; it does not certify the summaries as faithful.
 
 ## Development
 

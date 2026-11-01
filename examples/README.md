@@ -91,3 +91,49 @@ picked this step was computed on the normalized form.
 Exit code **1**: step 2 is where the runs actually parted ways, which is
 where debugging should start — everything after it differs *because* of
 step 2, not independently.
+
+## Demo 3 — compaction (`compact_run_a.jsonl` vs `compact_run_b.jsonl`)
+
+The same bug-fix task recorded twice. Both runs compact their context at
+step 3 — but the two summaries are worded completely differently, and the
+step-4 message quotes each run's own summary, so it differs too. The agent
+*did* the same thing in both runs: same reads, same edit, same tests, same
+final message.
+
+Strict mode falls for it:
+
+```bash
+agent-replay-diff examples/compact_run_a.jsonl examples/compact_run_b.jsonl
+# verdict: DIVERGENT, first divergence: step 3 (the compaction step itself)
+```
+
+Compaction-aware mode treats step 3 as the expected boundary — strict
+before it, a spot-check of the summaries at it (lengths within 2×, key
+entities overlapping), and behavior-only comparison after it:
+
+```bash
+agent-replay-diff examples/compact_run_a.jsonl examples/compact_run_b.jsonl --compaction-aware
+```
+
+```
+agent-replay-diff report
+========================
+examples/compact_run_a.jsonl: 8 steps
+examples/compact_run_b.jsonl: 8 steps
+compared steps: 3
+
+identical:   2
+noise-only:  1
+divergent:   0
+
+compaction-aware comparison:
+  boundary (first compaction): examples/compact_run_a.jsonl step 3, examples/compact_run_b.jsonl step 3
+  summaries: lengths 173/160 chars (ratio 1.08), entity overlap 1.00 — OK
+  tail: tool calls per run [2, 2], final step equal, 2 post-compaction step(s) ignored
+
+verdict: STABLE AFTER NORMALIZATION (differences were volatile noise only)
+first divergence: none
+```
+
+Exit code **0** with `--compaction-aware`, **1** without: the compaction
+step is where the runs' *records* part, not where the runs themselves do.

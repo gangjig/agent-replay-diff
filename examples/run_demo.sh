@@ -19,3 +19,13 @@ echo "        the runs fetch different pages -> expected exit code 1"
 echo "==================================================================="
 python3 -m agent_replay_diff diverge_run_a.jsonl diverge_run_b.jsonl
 echo "exit code: $? (expected 1)"
+echo
+echo "==================================================================="
+echo "Demo 3: both runs compact context at step 3; the summaries are"
+echo "        worded differently, so strict mode reports a fake fork"
+echo "        -> expected exit code 1 without the flag, 0 with it"
+echo "==================================================================="
+python3 -m agent_replay_diff compact_run_a.jsonl compact_run_b.jsonl
+echo "exit code: $? (expected 1 in strict mode)"
+python3 -m agent_replay_diff compact_run_a.jsonl compact_run_b.jsonl --compaction-aware
+echo "exit code: $? (expected 0 with --compaction-aware)"

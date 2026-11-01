@@ -50,6 +50,45 @@ class PairDiff:
     diff: str  # unified diff text
 
 
+@dataclass(frozen=True)
+class CompactionReport:
+    """Compaction-aware mode: what happened at and after the boundary.
+
+    Produced by :func:`agent_replay_diff.compaction.compare_traces_compaction_aware`;
+    see that module for the semantics. ``summary_length_ratio`` may be
+    ``inf`` when one run's summary is empty and another's is not.
+    """
+
+    boundary_indices: list[int]  # per run: index of its first compaction step
+    summary_lengths: list[int]  # per run: characters in the compaction summary
+    summary_length_ratio: float  # max / min summary length
+    summary_entity_overlap: float  # Jaccard overlap of summary entities, 0..1
+    summary_ok: bool
+    tail_tool_calls: list[int]  # per run: tool calls after its boundary
+    tail_tool_mismatch: str | None  # human description, None when sequences agree
+    final_compared: bool
+    final_equal: bool | None  # None when no run had a post-compaction final step
+    ignored_steps: int  # post-boundary steps whose wording was allowed to drift
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "boundary_indices": self.boundary_indices,
+            "summary_lengths": self.summary_lengths,
+            "summary_length_ratio": (
+                round(self.summary_length_ratio, 3)
+                if self.summary_length_ratio != float("inf")
+                else None
+            ),
+            "summary_entity_overlap": round(self.summary_entity_overlap, 3),
+            "summary_ok": self.summary_ok,
+            "tail_tool_calls": self.tail_tool_calls,
+            "tail_tool_mismatch": self.tail_tool_mismatch,
+            "final_compared": self.final_compared,
+            "final_equal": self.final_equal,
+            "ignored_steps": self.ignored_steps,
+        }
+
+
 @dataclass
 class DiffReport:
     labels: list[str]
@@ -57,6 +96,10 @@ class DiffReport:
     steps: list[StepComparison]
     first_divergence: int | None
     divergence_diffs: list[PairDiff] = field(default_factory=list)
+    mode: str = "strict"  # "strict" | "compaction_aware"
+    compaction: CompactionReport | None = None
+    compaction_note: str | None = None  # e.g. why compaction mode fell back
+    verdict_override: str | None = None  # set by compaction-aware comparison
 
     @property
     def compared_steps(self) -> int:
@@ -71,6 +114,8 @@ class DiffReport:
 
     @property
     def verdict(self) -> str:
+        if self.verdict_override is not None:
+            return self.verdict_override
         counts = self.counts
         if counts[DIVERGENT]:
             return VERDICT_DIVERGENT
@@ -86,6 +131,11 @@ class DiffReport:
     def to_dict(self) -> dict[str, Any]:
         counts = self.counts
         return {
+            "mode": self.mode,
+            "compaction": (
+                self.compaction.to_dict() if self.compaction is not None else None
+            ),
+            "compaction_note": self.compaction_note,
             "runs": [
                 {"label": label, "steps": count}
                 for label, count in zip(self.labels, self.step_counts)
