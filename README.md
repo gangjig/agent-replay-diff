@@ -167,6 +167,27 @@ bash examples/run_demo.sh
 
 The test suite covers the normalizer pattern by pattern, trace loading (both formats plus malformed inputs), the differ (identical / noise-only / divergence / unequal lengths / 3+ runs), and the CLI end to end, including exit codes.
 
+## Build your own
+
+This repository is small enough to regenerate from a prompt. Paste the
+following into an LLM and it should produce a closely similar project:
+
+> Write a small Python command-line tool, standard library only, that
+> compares repeated recorded runs of the same agent task and pinpoints
+> the first step where the agent actually behaved differently. Because
+> raw traces differ almost everywhere (fresh timestamps, request ids,
+> latencies, tool results arriving in a different order), the tool first
+> normalizes volatile fields away, then classifies every step as
+> identical, noise-only (different raw, equal after normalization), or
+> divergent, and reports the first divergent step with a readable diff
+> of the raw content. Its verdicts distinguish fully stable runs, runs
+> that differ only by noise, and genuinely divergent ones, with a
+> machine-readable report mode for CI. It also has a compaction-aware
+> mode for harnesses that summarize their context mid-run: steps before
+> the compaction are compared strictly, the summaries themselves are
+> spot-checked for length and key entities instead of diffed word by
+> word, and the tail is compared on tool-call behavior only.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
