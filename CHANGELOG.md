@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.3.0 — 2026-11-11
+
+- **Harness-terminated run marking (`--exclude-harness-terminated`).**
+  Every run's final step is now checked for harness-failure signals —
+  an explicit `harness_terminated` / `terminated_by: "harness"` marker,
+  a final-step type naming a harness failure (`content_filter`,
+  `provider_error`, `timeout`, `harness_error`, ...), or a final-step
+  `error` whose text names a harness cause (content filter, timeout,
+  rate limit, provider/connection failure). Detected runs are listed
+  in text and JSON reports (`harness_terminated`, `termination_note`)
+  with the matched signal, because their final answer was not produced
+  by the agent. Detection is final-step-only and conservative: a
+  mid-trace error is normal agent life, and a bare final `error`
+  naming no harness cause is not flagged. By default detected runs
+  still take part in the comparison; the new flag excludes them from
+  the comparison and verdict when at least two non-terminated runs
+  remain, so a provider outage cannot pose as agent instability in a
+  flakiness gate. Motivated by *Dependable Long-Horizon LLM Agents*
+  (arXiv:2611.13254), whose failure analysis found 45% of
+  human-annotated Who&When failures ending in a provider
+  content-filter crash with the harness producing the final answer:
+  https://arxiv.org/abs/2611.13254
+
 ## 0.2.0 — 2026-11-01
 
 - **Compaction-aware comparison (`--compaction-aware`).** Harnesses

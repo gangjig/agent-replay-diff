@@ -68,6 +68,10 @@ agent-replay-diff run_a.jsonl run_b.jsonl --no-sort-lists
 # summarizer's wording pose as a divergence
 agent-replay-diff run_a.jsonl run_b.jsonl --compaction-aware
 
+# One run died on the provider's content filter: don't let a
+# harness failure pose as agent instability
+agent-replay-diff run_a.jsonl run_b.jsonl run_c.jsonl --exclude-harness-terminated
+
 # Longer first-divergence diffs
 agent-replay-diff run_a.jsonl run_b.jsonl --max-diff-lines 200
 ```
@@ -98,7 +102,7 @@ first divergence: step 2
 
 (the diff shows the full raw step, so you see real recorded values rather than placeholders.)
 
-The JSON report carries the same information as structured data: per-run step counts, per-step classifications, classification totals, the verdict, the first divergence index, and the raw diffs.
+The JSON report carries the same information as structured data: per-run step counts, per-step classifications, classification totals, the verdict, the first divergence index, the raw diffs, and any harness-terminated runs (`harness_terminated`, with `termination_note`).
 
 ## How it works
 
@@ -116,6 +120,14 @@ Each step is rewritten recursively (dicts, lists, strings, numbers) into a canon
 Runs are aligned by step index. A step is **identical** if the raw steps are equal in every run, **noise-only** if they differ raw but are equal after normalization, and **divergent** otherwise — including steps missing from some run when the runs have unequal lengths. The first divergent step gets unified-style diffs of the *raw* step content (baseline = first run) so you see the real values, not placeholders.
 
 Verdicts: `stable` (every step identical), `stable_after_normalization` (no real divergence), `divergent`.
+
+### Harness-terminated runs
+
+Some runs never finish: the provider's content filter crashes the call, the request times out, the provider errors out — and the harness writes *something* as the final answer (or nothing). That answer was not produced by the agent, so counting the run as a divergence misreads a harness failure as agent instability. This is not a corner case: in the failure analysis of *Dependable Long-Horizon LLM Agents* ([arXiv:2611.13254](https://arxiv.org/abs/2611.13254)), 45% of human-annotated failures on the Who&When benchmark ended with a provider content-filter crash in which the harness, not the agent, produced the final answer.
+
+Every run's **final step** is checked for harness-failure signals: an explicit `harness_terminated: true` or `terminated_by: "harness"` marker, a final-step type naming a harness failure (`content_filter`, `provider_error`, `timeout`, `harness_error`, ...), or a final-step `error` whose text names a harness cause (content filter, timeout, rate limit, provider/connection failure). Detected runs are always listed in the report — text and JSON (`harness_terminated`) — with the step and the signal that matched. Detection looks at the final step only, on purpose: an error mid-trace is normal agent life (a failed tool call that gets retried), and a bare final `type: "error"` naming no harness cause is *not* flagged, because it may be the agent's own failure and mislabeling it would hide a real divergence.
+
+By default a detected run still takes part in the comparison (the report marks it `included in comparison`). `--exclude-harness-terminated` keeps detected runs out of the step comparison and the verdict entirely — the flakiness-gate setup: a provider outage should not fail your CI as agent instability. Exclusion applies only when at least two non-terminated runs remain to compare; otherwise the runs are all compared and the report's `termination_note` says why.
 
 ### Compaction-aware mode
 
@@ -156,6 +168,7 @@ agent-replay-diff is honest about what it cannot do:
 - **Normalization can mask real differences.** If a genuinely meaningful value happens to look volatile (a real ID that is UUID-shaped, a meaningful timestamp, a number in epoch range), or your `--pattern` / `--ignore-key` choices are too aggressive, real differences will be classified as noise. Start from the defaults and widen them only with evidence.
 - **JSON traces only.** Traces must be JSONL or a JSON array of step objects. Other recording formats (message lists in code, vendor-specific event streams) need converting first.
 - **Equality is structural, not semantic.** Two steps that say the same thing in different words are divergent; two steps with the same words in a different (object) list order are divergent. The tool finds where runs parted, not whether the parting mattered.
+- **Harness-termination detection is heuristic.** It reads the final step's markers, type, and error text. A harness that records a filter crash in some other shape — or silently, with no final step at all — leaves nothing to detect, and a message that merely *mentions* a timeout in its error text will be flagged even if the agent caused it. Widen or narrow the signal set to your harness's conventions before gating CI on exclusion.
 - **Compaction-aware mode checks summaries by proxy.** Length ratio and entity overlap catch summaries that dropped the topic or ballooned, but a summary can pass both checks and still misstate a fact the entities don't capture. The spot-check removes the *fake* forks; it does not certify the summaries as faithful.
 
 ## Development

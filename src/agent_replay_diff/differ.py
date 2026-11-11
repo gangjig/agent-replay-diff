@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .normalize import Normalizer
+from .termination import detect_harness_termination
 
 IDENTICAL = "identical"
 NOISE_ONLY = "noise_only"
@@ -39,6 +40,29 @@ class StepComparison:
     index: int
     classification: str  # IDENTICAL | NOISE_ONLY | DIVERGENT
     present_in_all: bool
+
+
+@dataclass(frozen=True)
+class HarnessTermination:
+    """A run whose ending was a harness failure, not agent behavior.
+
+    ``excluded`` is True when the run was kept out of the comparison
+    (see ``exclude_harness_terminated`` in :func:`compare_traces`);
+    detected runs are always listed, excluded or not.
+    """
+
+    label: str
+    step_index: int
+    reason: str
+    excluded: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "run": self.label,
+            "step": self.step_index,
+            "reason": self.reason,
+            "excluded": self.excluded,
+        }
 
 
 @dataclass(frozen=True)
@@ -100,6 +124,8 @@ class DiffReport:
     compaction: CompactionReport | None = None
     compaction_note: str | None = None  # e.g. why compaction mode fell back
     verdict_override: str | None = None  # set by compaction-aware comparison
+    harness_terminations: list[HarnessTermination] = field(default_factory=list)
+    termination_note: str | None = None  # e.g. why exclusion did not apply
 
     @property
     def compared_steps(self) -> int:
@@ -136,6 +162,10 @@ class DiffReport:
                 self.compaction.to_dict() if self.compaction is not None else None
             ),
             "compaction_note": self.compaction_note,
+            "harness_terminated": [
+                term.to_dict() for term in self.harness_terminations
+            ],
+            "termination_note": self.termination_note,
             "runs": [
                 {"label": label, "steps": count}
                 for label, count in zip(self.labels, self.step_counts)
@@ -184,12 +214,83 @@ def compare_traces(
     labels: list[str] | None = None,
     normalizer: Normalizer | None = None,
     max_diff_lines: int = 80,
+    exclude_harness_terminated: bool = False,
 ) -> DiffReport:
-    """Compare 2+ traces of the same task and build a :class:`DiffReport`."""
+    """Compare 2+ traces of the same task and build a :class:`DiffReport`.
+
+    Every run is also checked for a harness termination (see
+    :mod:`agent_replay_diff.termination`): runs whose final step is a
+    harness failure — a provider content-filter crash, a timeout — are
+    listed in the report either way, because their "final answer" was
+    not produced by the agent. With ``exclude_harness_terminated`` they
+    are additionally kept out of the comparison itself, so a harness
+    outage cannot pose as agent instability; exclusion applies only
+    when at least two non-terminated runs remain to compare.
+    """
     if len(traces) < 2:
         raise ValueError("at least two traces are required to compare")
     if labels is None:
         labels = [f"run {i + 1}" for i in range(len(traces))]
+    if len(labels) != len(traces):
+        raise ValueError("labels must match the number of traces")
+
+    found_map: dict[int, tuple[int, str]] = {}
+    for i, trace in enumerate(traces):
+        found = detect_harness_termination(trace)
+        if found is not None:
+            found_map[i] = found
+    terminated = sorted(found_map)
+    kept = [i for i in range(len(traces)) if i not in found_map]
+
+    if exclude_harness_terminated and terminated and len(kept) >= 2:
+        report = _compare_traces_core(
+            [traces[i] for i in kept],
+            [labels[i] for i in kept],
+            normalizer,
+            max_diff_lines,
+        )
+        report.harness_terminations = [
+            HarnessTermination(
+                label=labels[i],
+                step_index=found_map[i][0],
+                reason=found_map[i][1],
+                excluded=True,
+            )
+            for i in terminated
+        ]
+        report.termination_note = (
+            f"{len(terminated)} harness-terminated run(s) excluded "
+            "from the comparison"
+        )
+        return report
+
+    report = _compare_traces_core(traces, labels, normalizer, max_diff_lines)
+    report.harness_terminations = [
+        HarnessTermination(
+            label=labels[i],
+            step_index=found_map[i][0],
+            reason=found_map[i][1],
+            excluded=False,
+        )
+        for i in terminated
+    ]
+    if terminated and exclude_harness_terminated:
+        report.termination_note = (
+            "harness-terminated run(s) detected but not excluded: "
+            "fewer than two non-terminated runs remain to compare"
+        )
+    return report
+
+
+def _compare_traces_core(
+    traces: list[list[dict[str, Any]]],
+    labels: list[str],
+    normalizer: Normalizer | None = None,
+    max_diff_lines: int = 80,
+) -> DiffReport:
+    """The strict step-by-step comparison; see :func:`compare_traces`."""
+    if len(traces) < 2:
+        raise ValueError("at least two traces are required to compare")
     if len(labels) != len(traces):
         raise ValueError("labels must match the number of traces")
     normalizer = normalizer or Normalizer()

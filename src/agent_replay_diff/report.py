@@ -35,6 +35,23 @@ def render_text(report: DiffReport) -> str:
     lines.append(f"divergent:   {counts[DIVERGENT]}")
     lines.append("")
 
+    if report.harness_terminations:
+        lines.append("harness-terminated runs (ending was a harness failure):")
+        for term in report.harness_terminations:
+            scope = (
+                "excluded from comparison"
+                if term.excluded
+                else "included in comparison"
+            )
+            lines.append(
+                f"  {term.label}: step {term.step_index} — {term.reason} ({scope})"
+            )
+        lines.append("")
+
+    if report.termination_note:
+        lines.append(f"note: {report.termination_note}")
+        lines.append("")
+
     if report.compaction_note:
         lines.append(f"note: {report.compaction_note}")
         lines.append("")

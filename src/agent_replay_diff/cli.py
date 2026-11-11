@@ -60,6 +60,15 @@ def build_parser() -> argparse.ArgumentParser:
         "(treat list order as meaningful)",
     )
     parser.add_argument(
+        "--exclude-harness-terminated",
+        action="store_true",
+        help="exclude runs whose final step is a harness failure "
+        "(content-filter crash, timeout, provider error) from the "
+        "comparison; such runs are always listed in the report, and "
+        "exclusion applies only when at least two other runs remain "
+        "(strict mode only)",
+    )
+    parser.add_argument(
         "--compaction-aware",
         action="store_true",
         help="treat each run's first compaction step (type \"compaction\" "
@@ -132,6 +141,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             labels=[str(path) for path in args.traces],
             normalizer=normalizer,
             max_diff_lines=args.max_diff_lines,
+            exclude_harness_terminated=args.exclude_harness_terminated,
         )
     print(render_json(report) if args.json else render_text(report))
     return report.exit_code
